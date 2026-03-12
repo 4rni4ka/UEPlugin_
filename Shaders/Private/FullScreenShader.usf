@@ -1,0 +1,25 @@
+
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/SceneTexturesCommon.ush"
+
+
+float Strenght;
+
+void MainVS(
+	in float4 InPosition : ATTRIBUTE0,
+	in float2 InTexCoord : ATTRIBUTE1,
+	out noperspective float4 OutUVAndScreenPos : TEXCOORD0,
+	out float4 OutPosition : SV_POSITION)
+{
+	DrawRectangle(InPosition, InTexCoord, OutPosition, OutUVAndScreenPos);
+}
+
+float4 MainPS(
+	noperspective float4 UVAndScreenPos : TEXCOORD0
+	) : SV_Target0
+{
+	float2 uv = UVAndScreenPos.xy;
+    float4 res = CalcSceneColorAndDepth(uv);
+	
+    return saturate(float4(lerp(res.xyz, res.www*0.00001f, saturate(Strenght)), 1.f));
+}
