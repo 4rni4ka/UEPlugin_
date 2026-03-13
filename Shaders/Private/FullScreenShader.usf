@@ -1,25 +1,31 @@
-
 #include "/Engine/Private/Common.ush"
 #include "/Engine/Private/SceneTexturesCommon.ush"
 
+float Opacity;
+float3 FogColor;
+float2 FogCurve;
+float FogStart;
 
-float Strenght;
-
-void MainVS(
-	in float4 InPosition : ATTRIBUTE0,
-	in float2 InTexCoord : ATTRIBUTE1,
-	out noperspective float4 OutUVAndScreenPos : TEXCOORD0,
-	out float4 OutPosition : SV_POSITION)
+float get_fog(float2 uv)
 {
-	DrawRectangle(InPosition, InTexCoord, OutPosition, OutUVAndScreenPos);
+    float depth = CalcSceneDepth(uv);
+
+    depth = distance(depth, FogStart);
+
+    return smoothstep(FogCurve.x, FogCurve.y, depth);
 }
 
 float4 MainPS(
-	noperspective float4 UVAndScreenPos : TEXCOORD0
-	) : SV_Target0
+    noperspective float4 UVAndScreenPos : TEXCOORD0
+) : SV_Target0
 {
-	float2 uv = UVAndScreenPos.xy;
-    float4 res = CalcSceneColorAndDepth(uv);
-	
-    return saturate(float4(lerp(res.xyz, res.www*0.00001f, saturate(Strenght)), 1.f));
+    float2 uv = UVAndScreenPos.xy;
+
+    float4 scene = CalcSceneColorAndDepth(uv);
+
+    float fog = get_fog(uv);
+
+    float3 color = lerp(scene.rgb, FogColor, fog * Opacity);
+
+    return float4(color, 1);
 }
