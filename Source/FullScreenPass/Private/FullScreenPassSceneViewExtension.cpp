@@ -1,9 +1,13 @@
 #include "FullScreenPassSceneViewExtension.h"
 #include "FullScreenPassShaders.h"
 
+#include "Engine/World.h"
 #include "FXRenderingUtils.h"
-#include "PostProcess/PostProcessInputs.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "SceneView.h"
+#include "StereoRendering.h"
 #include "DynamicResolutionState.h"
+#include "PostProcess/PostProcessInputs.h"
 
 static TAutoConsoleVariable<int32> CVarEnabled(
 	TEXT("r.FSP"),
@@ -47,10 +51,55 @@ static TAutoConsoleVariable<float> CVarFogColorB(
 	0.5f,
 	TEXT("Fog color B."));
 
+namespace
+{
+bool ShouldRenderFullScreenPass(const FSceneView& View)
+{
+	if (!View.bIsGameView ||
+		View.bIsSceneCapture ||
+		View.bIsSceneCaptureCube ||
+		View.bIsReflectionCapture ||
+		View.bIsPlanarReflection ||
+		View.bIsVirtualTexture ||
+		View.bIsOfflineRender)
+	{
+		return false;
+	}
+
+	if (View.Family == nullptr || !View.Family->EngineShowFlags.PostProcessing)
+	{
+		return false;
+	}
+
+	const FIntRect& ViewRect = View.UnscaledViewRect;
+	if (ViewRect.Width() <= 0 || ViewRect.Height() <= 0)
+	{
+		return false;
+	}
+
+	return !IStereoRendering::IsASecondaryView(View);
+}
+}
 
 FFullScreenPassSceneViewExtension::FFullScreenPassSceneViewExtension(const FAutoRegister& AutoRegister)
 	: FSceneViewExtensionBase(AutoRegister)
 {
+}
+
+bool FFullScreenPassSceneViewExtension::IsActiveThisFrame_Internal(const FSceneViewExtensionContext& Context) const
+{
+	if (CVarEnabled.GetValueOnGameThread() == 0)
+	{
+		return false;
+	}
+
+	const UWorld* World = Context.GetWorld();
+	if (World == nullptr || !World->IsGameWorld())
+	{
+		return false;
+	}
+
+	return Context.Viewport != nullptr;
 }
 
 void FFullScreenPassSceneViewExtension::PrePostProcessPass_RenderThread(
@@ -59,7 +108,9 @@ void FFullScreenPassSceneViewExtension::PrePostProcessPass_RenderThread(
 	const FPostProcessingInputs& Inputs
 )
 {
-	if (CVarEnabled->GetInt() == 0)
+	TRACE_CPUPROFILER_EVENT_SCOPE_STR("FullScreenPass::PrePostProcessPass_RenderThread");
+
+	if (CVarEnabled.GetValueOnRenderThread() == 0 || !ShouldRenderFullScreenPass(View))
 	{
 		return;
 	}
@@ -91,16 +142,16 @@ void FFullScreenPassSceneViewExtension::PrePostProcessPass_RenderThread(
 	Parameters->View = View.ViewUniformBuffer;
 	Parameters->SceneTexturesStruct = Inputs.SceneTextures;
 
-	Parameters->Opacity = CVarOpacity->GetFloat();
-	Parameters->FogStart = CVarFogStart->GetFloat();
+	Parameters->Opacity = CVarOpacity.GetValueOnRenderThread();
+	Parameters->FogStart = CVarFogStart.GetValueOnRenderThread();
 	Parameters->FogCurve = FVector2f(
-		CVarFogCurveMin->GetFloat(),
-		CVarFogCurveMax->GetFloat()
+		CVarFogCurveMin.GetValueOnRenderThread(),
+		CVarFogCurveMax.GetValueOnRenderThread()
 	);
 	Parameters->FogColor = FVector4f(
-		CVarFogColorR->GetFloat(),
-		CVarFogColorG->GetFloat(),
-		CVarFogColorB->GetFloat(),
+		CVarFogColorR.GetValueOnRenderThread(),
+		CVarFogColorG.GetValueOnRenderThread(),
+		CVarFogColorB.GetValueOnRenderThread(),
 		1.0f
 	);
 
